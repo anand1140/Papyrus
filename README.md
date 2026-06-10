@@ -1,2 +1,1 @@
-#initial project for a writer 
-aaja bhidle , darta  nahi hu kisi se hatt
+#A simple text editor written in c
