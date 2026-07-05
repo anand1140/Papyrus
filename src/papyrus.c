@@ -4,9 +4,17 @@
 #include <termios.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/ioctl.h>
 #include <ctype.h>
 
+struct papyrus_buf{
+	char *b;
+	int len;
+};
+
+void pbufFree(struct papyrus_buf *ab); 
+void pbufAppend(struct papyrus_buf *ab, const char *p, int len); 
 void die(const char *s);
 void disableRawMode();
 void enableRawMode(void);
@@ -16,7 +24,8 @@ void initEditor();
 void editorProcessKeypress();
 void editorRefreshScreen();
 
-
+#define PAPYRUS_VARIENT "0.0.1"
+#define PAPYRUS_BUF {NULL, 0}
 //this produces the controle code for Ctrl-Q and then check it against
 //the input read from terminal 
 #define CTRL_KEY(k) ((k) & 0x1f)
@@ -125,8 +134,24 @@ void editorProcessKeypress() {
 void editorDrawRows(struct papurus_buf *ab) {
 	int y;
 	for ( y = 0; y < E.screenrows; y++) {
-		pbufAppend(ab,"~",1);
+	if (y == E.screenrows / 3) {
+		char welcome[80];
+		int welcomelen = snprintf(welcome, sizeof(welcome), "Papyrus editor -- version %s", PAPYRUS_VARIENT);
 
+		if (welcomelen > E.screencols) welcomelen = E.screencols;
+		int padding = (E.screencols - welcomelen) / 2;
+		if (padding) {
+			pbufAppend(ab, "~", 1);
+			padding--;
+		}
+
+		while (padding--) pbufAppend(ab, " ", 1);
+		pbufAppend(ab, welcome, welcomelen);
+	} else {
+		pbufAppend(ab,"~",1);
+	}
+
+	pbufAppend(ab, "\x1b[K", 3);
 	if (y < E.screenrows -1) {
 		pbufAppend(ab,"\r\n",2);
 		}
@@ -134,12 +159,12 @@ void editorDrawRows(struct papurus_buf *ab) {
 }
 
 void editorRefreshScreen() {
-	struct papyrus_buf ab = ABUF_INIT;	
+	struct papyrus_buf ab = PAPYRUS_BUF;	
 
-	pbufAppend(&ab,"\x1b[2J", 4);
+	pbufAppend(&ab,"\x1b[?25l", 4);
 	pbufAppend(&ab,"\x1b[H", 3);
 	
-	editorDrawRows();
+	editorDrawRows(&ab);
 
 	pbufAppend(&ab,"\x1b[H", 3);
 	
@@ -154,18 +179,13 @@ void initEditor() {
 
 /*** append buffer ***/
 
-struct papyrus_buf{
-	char *b;
-	int len;
-};
 
-#define PAPYRUS_BUF {NULL, 0}
 
 void pbufAppend(struct papyrus_buf *ab, const char *p, int len) {
 	char *new = realloc(ab->b, ab->len+len);
 
 	if(new == NULL) return;
-	memcpy(&new[ab->len], s, len);
+	memcpy(&new[ab->len], p, len);
 	ab->b = new;
 	ab->len += len;
 }
