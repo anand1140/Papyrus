@@ -34,14 +34,19 @@ void editorRefreshScreen();
 //the struct for storing the original configurations 
 struct termios orig_termios ;
 
+/*** data ***/
+
 //the struct to store the global state of the terminal window 
 struct editorConfig {
+	int cx, cy;
 	int screenrows;
 	int screencols;
 	struct termios orig_termios;
 };
 
 struct editorConfig E;
+
+/*** terminal ***/
 
 //the function which handles dieng of our window 
 void die(const char *s) {
@@ -118,6 +123,28 @@ int getWindowSize(int *rows, int *cols) {
 	}
 }
 
+/*** input ***/
+void editorMoveCursor(char key) {
+	switch (key) {
+		case 'h':
+			if(E.cx > 0)
+			E.cx--;
+			break;
+		case 'l':
+			if(E.cx < E.screencols - 1)
+			E.cx++;
+			break;
+		case 'k':
+			if(E.cy > 0)
+			E.cy--;
+			break;
+		case 'j':
+			if(E.cy < E.screenrows - 1)
+			E.cy++;
+			break;
+	} 
+}
+
 //waits for a keypress and then processes it
 void editorProcessKeypress() {
 	char c = editorReadKey();
@@ -128,15 +155,22 @@ void editorProcessKeypress() {
 			write(STDOUT_FILENO, "\x1b[H", 3);
 			exit(0);
 			break;
+		case 'j':
+		case 'k':
+		case 'h':
+		case 'l':
+			editorMoveCursor(c);
+			break;
 	}
 }
 
+/*** init ***/
 void editorDrawRows(struct papurus_buf *ab) {
 	int y;
 	for ( y = 0; y < E.screenrows; y++) {
 	if (y == E.screenrows / 3) {
 		char welcome[80];
-		int welcomelen = snprintf(welcome, sizeof(welcome), "Papyrus editor -- version %s", PAPYRUS_VARIENT);
+		int welcomelen = snprintf(welcome, sizeof(welcome), "Papyrus editor -- version %s this is my first editor and it's kinda cool isnt it oh how much i like it", PAPYRUS_VARIENT);
 
 		if (welcomelen > E.screencols) welcomelen = E.screencols;
 		int padding = (E.screencols - welcomelen) / 2;
@@ -146,6 +180,7 @@ void editorDrawRows(struct papurus_buf *ab) {
 		}
 
 		while (padding--) pbufAppend(ab, " ", 1);
+//this line below is buggy ,as welcomelen isn't the true length of the buffer
 		pbufAppend(ab, welcome, welcomelen);
 	} else {
 		pbufAppend(ab,"~",1);
@@ -166,13 +201,21 @@ void editorRefreshScreen() {
 	
 	editorDrawRows(&ab);
 
-	pbufAppend(&ab,"\x1b[H", 3);
+	char buf[32];
+	snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy + 1, E.cx + 1);
+	pbufAppend(&ab,buf, strlen(buf));
+
+	pbufAppend(&ab,"\x1b[?25H", 6);
 	
 	write(STDOUT_FILENO, ab.b, ab.len);
 	pbufFree(&ab);
 }
+ 
+/*** init ***/
 
 void initEditor() {
+	E.cx = 0;
+	E.cy = 0;
 	if(getWindowSize(&E.screenrows, &E.screencols) == -1) 
 		die("getWindowSize");
 }
