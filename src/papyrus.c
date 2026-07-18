@@ -19,7 +19,7 @@ void die(const char *s);
 void disableRawMode();
 void enableRawMode(void);
 int getWindowSize(int *rows, int *cols);
-char editorReadKey();
+int editorReadKey();
 void initEditor();
 void editorProcessKeypress();
 void editorRefreshScreen();
@@ -29,6 +29,13 @@ void editorRefreshScreen();
 //this produces the controle code for Ctrl-Q and then check it against
 //the input read from terminal 
 #define CTRL_KEY(k) ((k) & 0x1f)
+
+enum editorKey {
+	ARROW_LEFT = 1000,
+	ARROW_RIGHT,
+	ARROW_UP,
+	ARROW_DOWN  
+};
 
 
 //the struct for storing the original configurations 
@@ -79,14 +86,35 @@ void enableRawMode(void) {
 }
 
 //this waits for one keypress and return's it later
-char editorReadKey() {
+int editorReadKey() {
 	int nread;
 	char c;
 	while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
 		if (nread == -1 && errno != EAGAIN) die ("read");
 	}
-	return c;
-}
+
+	//implementing arrow key register here as they are of multiple bytes
+//so we will have to treat multiple bytes as a single keypress
+	if(c == '\x1b') {
+		char seq[3];
+
+		if(read(STDIN_FILENO, &seq[0], 1) != 1) return '\x1b';
+		if(read(STDIN_FILENO, &seq[1], 1) != 1) return '\x1b';
+
+		if (seq[0] == '[') {
+			switch (seq[1]) {
+				case 'A': return ARROW_UP;
+				case 'B': return ARROW_DOWN;
+				case 'C': return ARROW_RIGHT;
+				case 'D': return ARROW_LEFT;
+			}
+		}
+
+		return '\x1b';
+		} else {
+			return c;
+		}
+	}
 
 int getCursorPosition(int *rows, int *cols) {
 	char buf[32];
@@ -124,21 +152,21 @@ int getWindowSize(int *rows, int *cols) {
 }
 
 /*** input ***/
-void editorMoveCursor(char key) {
+void editorMoveCursor(int key) {
 	switch (key) {
-		case 'h':
+		case ARROW_LEFT:
 			if(E.cx > 0)
 			E.cx--;
 			break;
-		case 'l':
+		case ARROW_RIGHT:
 			if(E.cx < E.screencols - 1)
 			E.cx++;
 			break;
-		case 'k':
+		case ARROW_UP:
 			if(E.cy > 0)
 			E.cy--;
 			break;
-		case 'j':
+		case ARROW_DOWN:
 			if(E.cy < E.screenrows - 1)
 			E.cy++;
 			break;
@@ -147,7 +175,7 @@ void editorMoveCursor(char key) {
 
 //waits for a keypress and then processes it
 void editorProcessKeypress() {
-	char c = editorReadKey();
+	int c = editorReadKey();
 
 	switch (c) {
 		case CTRL_KEY('q'):
@@ -155,10 +183,10 @@ void editorProcessKeypress() {
 			write(STDOUT_FILENO, "\x1b[H", 3);
 			exit(0);
 			break;
-		case 'j':
-		case 'k':
-		case 'h':
-		case 'l':
+		case ARROW_UP:
+		case ARROW_DOWN:
+		case ARROW_LEFT:
+		case ARROW_RIGHT:
 			editorMoveCursor(c);
 			break;
 	}
@@ -170,7 +198,7 @@ void editorDrawRows(struct papurus_buf *ab) {
 	for ( y = 0; y < E.screenrows; y++) {
 	if (y == E.screenrows / 3) {
 		char welcome[80];
-		int welcomelen = snprintf(welcome, sizeof(welcome), "Papyrus editor -- version %s this is my first editor and it's kinda cool isnt it oh how much i like it", PAPYRUS_VARIENT);
+		int welcomelen = snprintf(welcome, sizeof(welcome), "Papyrus editor -- version %s", PAPYRUS_VARIENT);
 
 		if (welcomelen > E.screencols) welcomelen = E.screencols;
 		int padding = (E.screencols - welcomelen) / 2;

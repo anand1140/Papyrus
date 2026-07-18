@@ -14,12 +14,24 @@ New Concepts
 the switch statement inside of **editorProcessKeypress()** but one thing we have
 seperated the concern of implementing the behavior of keypress into
 **editorMoveCursor()**
+- to map arrow key presses to cusor movement we have to account for multiple
+characters in the escape sequence provided when we read an arrow key
+- In eiditor read key we have to first check if we have read an escape key
+  '\x1b' if so then read the next two characters as arrow keys are 3 bytes
+long so the 2nd and 3rd bytes are '[' and one of the characters from A, B, C, D,
+if so then  return appropriate signals as the return type .
+- because we have set the value of enums as 1000 , 1001 and so on hence we
+also change the return type from char to int  return appropriate signals as
+char tupe cannot accomodat such large values . 
+- editorReadKey() hides the complexity of decoding escape sequences. The rest of the editor never needs to know that arrow keys are actually three bytes long—it simply receives ARROW_LEFT, ARROW_RIGHT, etc.
 
 Questions
 ---------
 - why decrementing the E.cy-- moves the cursor above wheras
 incrementing E.cx++ moves the cursor downwards
 - the implementation seems quite simple 
+- why don't we just use the j , k ,l and h keys for navigation , why did we
+change it to arrow keys 
 
 Prediction
 ----------
