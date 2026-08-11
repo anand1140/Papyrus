@@ -1,2 +1,2 @@
 papyrus: papyrus.c
-	$(CC) papyrus.c -o papyrus -Wall -Wextra -pedantic -std=c99
+	$(CC) papyrus.c -o prototype -Wall -Wextra -pedantic -std=c99

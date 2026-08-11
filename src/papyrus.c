@@ -64,12 +64,14 @@ typedef struct papyrusrow {
 //the struct to store the global state of the terminal window 
 struct editorConfig {
 	int cx, cy;
+	int rowoff;
 	int screenrows;
 	int screencols;
 	int numrows;
-	papyrusrow row;
+	papyrusrow *row;
 	struct termios orig_termios;
 };
+
 
 struct editorConfig E;
 
@@ -193,6 +195,19 @@ int getWindowSize(int *rows, int *cols) {
 	}
 }
 
+/*** row operations ***/
+
+void papyrusAppendRow(char *s, size_t len) {
+	E.row = realloc(E.row, sizeof(papyrusrow) * (E.numrows + 1));
+
+	int at = E.numrows;
+	E.row[at].size = len;
+	E.row[at].chars = malloc(len + 1);
+	memcpy(E.row[at].chars, s, len);
+	E.row[at].chars[len] = '\0';
+	++(E.numrows) ;
+}
+
 /*** file i/0 ***/
 
 //emables the editor to process files and text 
@@ -203,15 +218,10 @@ void papyrusEditorOpen(char *filename) {
 	char *line = NULL;
 	size_t linecap = 0;
 	ssize_t linelen;
-	linelen = getline(&line, &linecap, fp);
-	if (linelen != -1) {
+	while ((linelen = getline(&line, &linecap,fp)) != -1) {
 		while (linelen > 0 && (line[linelen - 1] == '\n' || line[linelen - 1] == '\r'))
 			linelen--;
-	E.row.size = linelen;
-	E.row.chars = malloc(linelen + 1);
-	memcpy(E.row.chars, line, linelen);
-	E.row.chars[linelen] = '\0';
-	E.numrows = 1;
+		papyrusAppendRow(line, linelen);
 	}
 	free(line);
 	fclose(fp);
@@ -233,7 +243,7 @@ void editorMoveCursor(int key) {
 			E.cy--;
 			break;
 		case ARROW_DOWN:
-			if(E.cy < E.screenrows - 1)
+			if(E.cy < E.numrows)
 			E.cy++;
 			break;
 	} 
@@ -276,35 +286,45 @@ void editorProcessKeypress() {
 	}
 }
 
+void papyrusEditorScroll() {
+	if (E.cy < E.rowoff) {
+		E.rowoff = E.cy;
+	}
+	if (E.cy >= E.rowoff + E.screenrows) {
+		E.rowoff = E.cy - E.screenrows + 1;
+	}
+}
+
 /*** init ***/
 void editorDrawRows(struct papurus_buf *ab) {
 	int y;
 	for ( y = 0; y < E.screenrows; y++) {
-	if (y >= E.numrows) {
-		//E.numrows == 0 indicated that the text buffer is completely
-//empty, so welcome message is shown only if there is nothing in the text
-//buffer. 
-		if (E.numrows == 0 && y == E.screenrows / 3) {
-			char welcome[80];
-			int welcomelen = snprintf(welcome, sizeof(welcome), "Papyrus editor -- version %s", PAPYRUS_VARIENT);
+		int filerow = y + E.rowoff;
+		if (filerow >= E.numrows) {
+			//E.numrows == 0 indicated that the text buffer is completely
+	//empty, so welcome message is shown only if there is nothing in the text
+	//buffer. 
+			if (E.numrows == 0 && y == E.screenrows / 3) {
+				char welcome[80];
+				int welcomelen = snprintf(welcome, sizeof(welcome), "Papyrus editor -- version %s", PAPYRUS_VARIENT);
 
-			if (welcomelen > E.screencols) welcomelen = E.screencols;
-			int padding = (E.screencols - welcomelen) / 2;
-			if (padding) {
-				pbufAppend(ab, "~", 1);
-				padding--;
-			}
+				if (welcomelen > E.screencols) welcomelen = E.screencols;
+				int padding = (E.screencols - welcomelen) / 2;
+				if (padding) {
+					pbufAppend(ab, "~", 1);
+					padding--;
+				}
 
-			while (padding--) pbufAppend(ab, " ", 1);
-	//this line below is buggy ,as welcomelen isn't the true length of the buffer
-			pbufAppend(ab, welcome, welcomelen);
-			} else {
-				pbufAppend(ab,"~",1);
-			}
+				while (padding--) pbufAppend(ab, " ", 1);
+		//this line below is buggy ,as welcomelen isn't the true length of the buffer
+				pbufAppend(ab, welcome, welcomelen);
+				} else {
+					pbufAppend(ab,"~",1);
+				}
 		} else {
-			int len = E.row.size;
+			int len = E.row[filerow].size;
 			if (len > E.screencols) len = E.screencols;
-			pbufAppend(ab, E.row.chars, len);
+			pbufAppend(ab, E.row[filerow].chars, len);
 		}
 		
 		pbufAppend(ab, "\x1b[K", 3);
@@ -314,7 +334,13 @@ void editorDrawRows(struct papurus_buf *ab) {
 		}
 }
 
+//this function is responsible for flusign out the buffer to the terminal
+//screen using the write() method and then freeing up teh buffer at exit
 void editorRefreshScreen() {
+	//i have named my editorScroll function as papyrusEditorScroll but it
+	//essentially does the same thing
+	papyrusEditorScroll();
+
 	struct papyrus_buf ab = PAPYRUS_BUF;	
 
 	pbufAppend(&ab,"\x1b[?25l", 4);
@@ -323,7 +349,7 @@ void editorRefreshScreen() {
 	editorDrawRows(&ab);
 
 	char buf[32];
-	snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy + 1, E.cx + 1);
+	snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1, E.cx + 1);
 	pbufAppend(&ab,buf, strlen(buf));
 
 	pbufAppend(&ab,"\x1b[?25H", 6);
@@ -337,7 +363,9 @@ void editorRefreshScreen() {
 void initEditor() {
 	E.cx = 0;
 	E.cy = 0;
+	E.rowoff = 0;
 	E.numrows = 0;
+	E.row = NULL;
 
 	if(getWindowSize(&E.screenrows, &E.screencols) == -1) 
 		die("getWindowSize");
